@@ -1,57 +1,70 @@
+// server.js
+require('dotenv').config(); // Убедитесь, что dotenv загружает переменные и здесь
 const express = require('express');
+const db = require('./db'); // Можно импортировать, чтобы убедиться, что подключение инициализируется
+const performanceRoutes = require('./routes/performances'); // Импортируем роутер
+
+// TODO: Импортировать другие роутеры по мере их создания
+
 const app = express();
-const port = 3000; // Порт, на котором будет работать сервер
+const port = process.env.PORT || 3000;
 
-// Middleware для обработки JSON-тел запросов
-app.use(express.json());
+// Middleware
+app.use(express.json()); // Обязательно для парсинга JSON в req.body для POST/PUT запросов
+app.use(express.urlencoded({ extended: true })); // Для парсинга форм (если нужно)
 
-// Временное хранилище для данных о спектаклях (пока без базы данных)
-let shows = [
-  { id: 1, title: 'Пример Спектакля 1', date: '2025-05-10' },
-  { id: 2, title: 'Пример Спектакля 2', date: '2025-05-15' }
-];
-
-// Счетчик для генерации ID новых спектаклей
-let nextShowId = 3;
+// Простой middleware для логирования запросов (полезно для отладки)
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl}`);
+  next(); // Передаем управление следующему обработчику
+});
 
 // --- API Маршруты ---
-
-// GET /api/shows - Получить список всех спектаклей
-app.get('/api/shows', (req, res) => {
-  res.json(shows); // Отправляем массив спектаклей в формате JSON
+app.get('/api', (req, res) => {
+  res.json({ message: 'Добро пожаловать в Theatre API!' });
 });
 
-// GET /api/shows/:id - Получить конкретный спектакль по ID
-app.get('/api/shows/:id', (req, res) => {
-  const showId = parseInt(req.params.id); // Получаем ID из параметров URL
-  const show = shows.find(s => s.id === showId); // Ищем спектакль по ID
+// Подключаем роутеры для конкретных сущностей
+app.use('/api/performances', performanceRoutes);
+// TODO: Подключить другие роутеры:
+// app.use('/api/actors', actorRoutes);
+// app.use('/api/halls', hallRoutes);
+// ... и так далее
 
-  if (show) {
-    res.json(show); // Если нашли, отправляем его
-  } else {
-    res.status(404).send('Спектакль не найден'); // Иначе отправляем ошибку 404
-  }
+// Обработка несуществующих маршрутов (должна быть ПОСЛЕ всех app.use для роутеров)
+app.use((req, res, next) => {
+  res.status(404).json({ error: "Маршрут не найден" });
 });
 
-// POST /api/shows - Добавить новый спектакль
-app.post('/api/shows', (req, res) => {
-  const newShow = {
-    id: nextShowId++, // Генерируем новый ID
-    title: req.body.title, // Получаем название из тела запроса
-    date: req.body.date   // Получаем дату из тела запроса
-  };
-
-  if (!newShow.title || !newShow.date) {
-      return res.status(400).send('Требуется название и дата для спектакля.');
-  }
-
-  shows.push(newShow); // Добавляем новый спектакль в массив
-  res.status(201).json(newShow); // Отправляем созданный спектакль с статусом 201 (Created)
+// Глобальный обработчик ошибок (должен быть САМЫМ последним middleware)
+app.use((err, req, res, next) => {
+  console.error("Произошла необработанная ошибка:", err.stack);
+  res.status(500).json({ error: 'Внутренняя ошибка сервера' });
 });
-
-// TODO: Добавить маршруты для PUT (редактирование) и DELETE (удаление)
 
 // Запуск сервера
 app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}/`);
+  console.log(`Сервер запущен на порту ${port}`);
+  // Можно добавить тестовый запрос к БД при старте
+  db.query('SELECT NOW()', (err, res) => {
+    if (err) {
+        console.error("Ошибка подключения к базе данных при старте:", err);
+    } else {
+        console.log("Успешное тестовое подключение к базе данных:", res.rows[0].now);
+    }
+  });
+});
+
+// Обработка корректного завершения работы (закрытие пула соединений)
+process.on('SIGINT', async () => {
+    console.log('Получен SIGINT. Завершение работы...');
+    await db.pool.end();
+    console.log('Пул соединений PostgreSQL закрыт.');
+    process.exit(0);
+});
+process.on('SIGTERM', async () => {
+    console.log('Получен SIGTERM. Завершение работы...');
+    await db.pool.end();
+    console.log('Пул соединений PostgreSQL закрыт.');
+    process.exit(0);
 });
