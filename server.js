@@ -21,6 +21,7 @@ const orderRoutes = require('./routes/orders');
 const ticketRoutes = require('./routes/tickets');
 const bookingRoutes = require('./routes/bookings');
 const saleRoutes = require('./routes/sales');
+const reservationRoutes = require('./routes/reservations'); // Импорт нового роутера
 
 
 const app = express();
@@ -65,6 +66,7 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/sales', saleRoutes);
+app.use('/api/reservations', reservationRoutes);
 
 
 // --- Обработчики ошибок (должны идти после всех маршрутов) ---
