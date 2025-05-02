@@ -1,57 +1,65 @@
+// routes/performances.js
 const express = require('express');
-const app = express();
-const port = 3000; // Порт, на котором будет работать сервер
+const router = express.Router();
+const db = require('../db'); // <-- Импортируем наш модуль для работы с БД
 
-// Middleware для обработки JSON-тел запросов
-app.use(express.json());
-
-// Временное хранилище для данных о спектаклях (пока без базы данных)
-let shows = [
-  { id: 1, title: 'Пример Спектакля 1', date: '2025-05-10' },
-  { id: 2, title: 'Пример Спектакля 2', date: '2025-05-15' }
-];
-
-// Счетчик для генерации ID новых спектаклей
-let nextShowId = 3;
-
-// --- API Маршруты ---
-
-// GET /api/shows - Получить список всех спектаклей
-app.get('/api/shows', (req, res) => {
-  res.json(shows); // Отправляем массив спектаклей в формате JSON
-});
-
-// GET /api/shows/:id - Получить конкретный спектакль по ID
-app.get('/api/shows/:id', (req, res) => {
-  const showId = parseInt(req.params.id); // Получаем ID из параметров URL
-  const show = shows.find(s => s.id === showId); // Ищем спектакль по ID
-
-  if (show) {
-    res.json(show); // Если нашли, отправляем его
-  } else {
-    res.status(404).send('Спектакль не найден'); // Иначе отправляем ошибку 404
+// GET /api/performances - Получить список всех представлений
+router.get('/', async (req, res) => {
+  try {
+    // Выполняем SQL-запрос с помощью импортированной функции
+    const { rows } = await db.query('SELECT * FROM performances ORDER BY title');
+    res.json(rows); // Отправляем результат клиенту
+  } catch (err) {
+    console.error('Ошибка при получении представлений:', err);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' }); // Отправляем ошибку
   }
 });
 
-// POST /api/shows - Добавить новый спектакль
-app.post('/api/shows', (req, res) => {
-  const newShow = {
-    id: nextShowId++, // Генерируем новый ID
-    title: req.body.title, // Получаем название из тела запроса
-    date: req.body.date   // Получаем дату из тела запроса
-  };
+// GET /api/performances/:id - Получить представление по ID
+router.get('/:id', async (req, res) => {
+  const { id } = req.params;
+  try {
+    // Используем параметризованный запрос для безопасности (защита от SQL-инъекций)
+    const { rows } = await db.query('SELECT * FROM performances WHERE id = $1', [id]);
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Представление не найдено' });
+    }
+    res.json(rows[0]);
+  } catch (err) {
+    console.error(`Ошибка при получении представления ${id}:`, err);
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
+});
 
-  if (!newShow.title || !newShow.date) {
-      return res.status(400).send('Требуется название и дата для спектакля.');
+// POST /api/performances - Добавить новое представление
+router.post('/', async (req, res) => {
+  // Получаем данные из тела запроса (убедитесь, что middleware express.json() подключен)
+  const { title, type_id, producer_id, description } = req.body;
+
+  // Простая валидация обязательных полей (согласно вашей схеме)
+  if (!title || !type_id) {
+    return res.status(400).json({ error: 'Необходимо указать название (title) и ID типа (type_id)' });
   }
 
-  shows.push(newShow); // Добавляем новый спектакль в массив
-  res.status(201).json(newShow); // Отправляем созданный спектакль с статусом 201 (Created)
+  try {
+    const sql = `
+      INSERT INTO performances (title, type_id, producer_id, description)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *`; // RETURNING * вернет созданную запись
+    const values = [title, type_id, producer_id || null, description || null];
+
+    const { rows } = await db.query(sql, values);
+    res.status(201).json(rows[0]); // Отправляем созданный объект со статусом 201 Created
+  } catch (err) {
+    console.error('Ошибка при добавлении представления:', err);
+     // Проверка на конкретные ошибки БД, если нужно
+     if (err.code === '23503') { // Нарушение внешнего ключа (например, type_id не существует)
+        return res.status(400).json({ error: `Неверный ID типа (${type_id}) или продюсера (${producer_id}).` });
+     }
+    res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+  }
 });
 
-// TODO: Добавить маршруты для PUT (редактирование) и DELETE (удаление)
+// TODO: Добавить маршруты для PUT (обновление) и DELETE (удаление)
 
-// Запуск сервера
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}/`);
-});
+module.exports = router; // Экспортируем роутер
