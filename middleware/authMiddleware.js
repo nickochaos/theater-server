@@ -1,57 +1,62 @@
-const express = require('express');
-const app = express();
-const port = 3000; // Порт, на котором будет работать сервер
+// middleware/authMiddleware.js
+const jwt = require('jsonwebtoken');
+const db = require('../db'); // Понадобится, если нужно проверять пользователя по ID из токена
 
-// Middleware для обработки JSON-тел запросов
-app.use(express.json());
+const protect = async (req, res, next) => {
+  let token;
 
-// Временное хранилище для данных о спектаклях (пока без базы данных)
-let shows = [
-  { id: 1, title: 'Пример Спектакля 1', date: '2025-05-10' },
-  { id: 2, title: 'Пример Спектакля 2', date: '2025-05-15' }
-];
+  // Ищем токен в заголовке Authorization: Bearer <token>
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith('Bearer')
+  ) {
+    try {
+      // Извлекаем токен
+      token = req.headers.authorization.split(' ')[1];
 
-// Счетчик для генерации ID новых спектаклей
-let nextShowId = 3;
+      // Верифицируем токен с нашим секретным ключом
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-// --- API Маршруты ---
+      // Находим пользователя по ID из токена и добавляем его в объект запроса
+      // Исключаем пароль из выборки!
+      const userQuery = await db.query(
+          'SELECT id, username, name, surname, email, phone, role FROM users WHERE id = $1',
+          [decoded.userId] // Предполагаем, что в токен записан userId
+      );
 
-// GET /api/shows - Получить список всех спектаклей
-app.get('/api/shows', (req, res) => {
-  res.json(shows); // Отправляем массив спектаклей в формате JSON
-});
+      if (userQuery.rows.length === 0) {
+          return res.status(401).json({ error: 'Пользователь токена не найден' });
+      }
 
-// GET /api/shows/:id - Получить конкретный спектакль по ID
-app.get('/api/shows/:id', (req, res) => {
-  const showId = parseInt(req.params.id); // Получаем ID из параметров URL
-  const show = shows.find(s => s.id === showId); // Ищем спектакль по ID
+      req.user = userQuery.rows[0]; // Добавляем объект user к запросу
+      next(); // Переходим к следующему middleware или обработчику маршрута
 
-  if (show) {
-    res.json(show); // Если нашли, отправляем его
-  } else {
-    res.status(404).send('Спектакль не найден'); // Иначе отправляем ошибку 404
+    } catch (error) {
+      console.error('Ошибка верификации токена:', error.message);
+      // Обработка разных ошибок токена
+      if (error.name === 'JsonWebTokenError') {
+        return res.status(401).json({ error: 'Недействительный токен' });
+      }
+      if (error.name === 'TokenExpiredError') {
+        return res.status(401).json({ error: 'Срок действия токена истек' });
+      }
+      return res.status(401).json({ error: 'Не авторизован, ошибка токена' });
+    }
   }
-});
 
-// POST /api/shows - Добавить новый спектакль
-app.post('/api/shows', (req, res) => {
-  const newShow = {
-    id: nextShowId++, // Генерируем новый ID
-    title: req.body.title, // Получаем название из тела запроса
-    date: req.body.date   // Получаем дату из тела запроса
-  };
-
-  if (!newShow.title || !newShow.date) {
-      return res.status(400).send('Требуется название и дата для спектакля.');
+  if (!token) {
+    res.status(401).json({ error: 'Не авторизован, токен отсутствует' });
   }
+};
 
-  shows.push(newShow); // Добавляем новый спектакль в массив
-  res.status(201).json(newShow); // Отправляем созданный спектакль с статусом 201 (Created)
-});
+// Middleware для проверки роли администратора
+const isAdmin = (req, res, next) => {
+    if (req.user && req.user.role === 'admin') {
+        next();
+    } else {
+        res.status(403).json({ error: 'Доступ запрещен. Требуются права администратора.' });
+    }
+};
 
-// TODO: Добавить маршруты для PUT (редактирование) и DELETE (удаление)
 
-// Запуск сервера
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}/`);
-});
+module.exports = { protect, isAdmin };
