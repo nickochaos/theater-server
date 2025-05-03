@@ -59,73 +59,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.post('/', isAdmin, async (req, res) => { // Добавляем isAdmin middleware
-    // Получаем данные из тела запроса
-    const { username, password, name, surname, email, phone, role } = req.body;
 
-    // --- Серверная валидация входных данных ---
-    if (!username || !password || !name || !surname || !email || !role) {
-        // Возвращаем ошибку 400 Bad Request, если обязательные поля отсутствуют
-        return res.status(400).json({ error: 'Требуются username, password, name, surname, email, role' });
-    }
-
-    // Проверка на допустимые значения для роли
-    if (!['admin', 'customer'].includes(role)) {
-         return res.status(400).json({ error: 'Недопустимое значение для роли. Допустимы: admin, customer.' });
-    }
-
-    try {
-        // --- Проверка, существует ли уже пользователь с таким логином или email ---
-        const existingUser = await db.query('SELECT id FROM users WHERE username = $1 OR email = $2', [username, email]);
-        if (existingUser.rows.length > 0) {
-            // Если пользователь найден, возвращаем ошибку 409 Conflict
-            // Проверяем, что именно дублируется (логин или email) для более точного сообщения
-            const duplicateByUsername = existingUser.rows.some(user => user.username === username);
-            const duplicateByEmail = existingUser.rows.some(user => user.email === email);
-
-            if (duplicateByUsername) {
-                 return res.status(409).json({ error: `Логин '${username}' уже занят.` });
-            }
-            if (duplicateByEmail) {
-                 return res.status(409).json({ error: `Email '${email}' уже зарегистрирован.` });
-            }
-             // Если по какой-то причине оба, можно вернуть общее
-             return res.status(409).json({ error: 'Пользователь с таким логином или email уже существует.' });
-        }
-
-        // --- Хеширование пароля перед сохранением в базу данных ---
-        // Пароли никогда нельзя хранить в открытом виде!
-        const salt = await bcrypt.genSalt(10); // Генерируем "соль"
-        const password_hash = await bcrypt.hash(password, salt); // Хешируем пароль с солью
-
-        // --- Сохранение нового пользователя в базу данных ---
-        const sql = `
-            INSERT INTO users (username, password_hash, name, surname, email, phone, role)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            RETURNING id, username, name, surname, email, phone, role`; // Возвращаем данные созданного пользователя (кроме хеша пароля)
-
-        const { rows } = await db.query(sql, [
-            username, password_hash, name, surname, email, phone || null, role // phone может быть null
-        ]);
-
-        // Возвращаем данные созданного пользователя с кодом 201 Created
-        res.status(201).json(rows[0]);
-
-    } catch (err) {
-        // Обработка ошибок при работе с базой данных или хешировании
-        console.error('Ошибка при добавлении пользователя:', err);
-        // Если ошибка связана с уникальностью (например, username или email), можно добавить более специфичную обработку
-         if (err.code === '23505') { // Код ошибки PostgreSQL для нарушения уникальности
-             if (err.constraint === 'users_username_key') {
-                 return res.status(409).json({ error: `Логин '${username}' уже занят.` });
-             }
-             if (err.constraint === 'users_email_key') {
-                 return res.status(409).json({ error: `Email '${email}' уже зарегистрирован.` });
-             }
-         }
-        res.status(500).json({ error: 'Внутренняя ошибка сервера при добавлении пользователя' });
-    }
-});
 // PUT /api/users/:id - Обновить профиль (админ или сам пользователь)
 // Не обновляет пароль и не позволяет пользователю повысить себе роль
 router.put('/:id', async (req, res) => {
