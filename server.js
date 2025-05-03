@@ -2,6 +2,7 @@
 require('dotenv').config(); // Загружаем переменные окружения из .env
 const express = require('express');
 const db = require('./db'); // Наш модуль для работы с БД (инициализирует пул)
+const cors = require('cors');
 
 // --- Импорт роутеров ---
 const authRoutes = require('./routes/auth'); // Для /register и /login
@@ -33,6 +34,8 @@ const port = process.env.PORT || 3000; // Используем порт из .en
 app.use(express.json());
 // Парсинг URL-encoded тел запросов (для обычных HTML форм)
 app.use(express.urlencoded({ extended: true }));
+// Самый простой вариант, разрешает все источники:
+app.use(cors());
 
 // Простое логирование каждого запроса
 app.use((req, res, next) => {
