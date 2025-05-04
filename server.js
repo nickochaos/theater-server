@@ -32,9 +32,9 @@ const port = process.env.PORT || 3000; // Используем порт из .en
 // --- Middleware ---
 
 // Парсинг JSON тел запросов
-//app.use(express.json());
+app.use(express.json());
 // Парсинг URL-encoded тел запросов (для обычных HTML форм)
-//app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true }));
 // Самый простой вариант, разрешает все источники:
 app.use(cors());
 
