@@ -1,5 +1,6 @@
 // server.js
 require('dotenv').config(); // Загружаем переменные окружения из .env
+const path = require('path');
 const express = require('express');
 const db = require('./db'); // Наш модуль для работы с БД (инициализирует пул)
 const cors = require('cors');
@@ -45,12 +46,16 @@ app.use((req, res, next) => {
 
 
 // --- Основные API Маршруты ---
-
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 // Приветственный маршрут
 app.get('/api', (req, res) => {
   res.json({ message: 'Добро пожаловать в Theatre API!' });
 });
 
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl}`);
+  next();
+});
 // --- Подключение роутеров для каждой сущности ---
 app.use('/api/auth', authRoutes); // Регистрация и вход (незащищенные)
 app.use('/api/users', userRoutes); // Управление пользователями (защищенные внутри роутера)
