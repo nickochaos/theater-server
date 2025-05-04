@@ -2,8 +2,10 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
+const { protect, isAdmin } = require('../middleware/authMiddleware');
 
-// GET /api/halls
+// GET /api/halls - Получить все залы (Доступно всем авторизованным или вообще всем)
+// Решите, нужна ли здесь защита 'protect'
 router.get('/', async (req, res) => {
   try {
     const { rows } = await db.query('SELECT * FROM halls ORDER BY hall_name');
@@ -14,7 +16,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET /api/halls/:id
+// GET /api/halls/:id - Получить зал по ID (Доступно всем авторизованным или вообще всем)
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
   try {
@@ -29,8 +31,8 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/halls
-router.post('/', async (req, res) => {
+// POST /api/halls - Добавить новый зал (Только Админ)
+router.post('/', protect, isAdmin, async (req, res) => {
   const { hall_name } = req.body;
   if (!hall_name) {
     return res.status(400).json({ error: 'Требуется название зала (hall_name)' });
@@ -48,8 +50,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PUT /api/halls/:id
-router.put('/:id', async (req, res) => {
+// PUT /api/halls/:id - Обновить зал (Только Админ)
+router.put('/:id', protect, isAdmin, async (req, res) => {
   const { id } = req.params;
   const { hall_name } = req.body;
   if (!hall_name) {
@@ -71,11 +73,13 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/halls/:id
-router.delete('/:id', async (req, res) => {
+// DELETE /api/halls/:id - Удалить зал (Только Админ)
+router.delete('/:id', protect, isAdmin, async (req, res) => {
   const { id } = req.params;
   try {
-    // Учитывайте ON DELETE CASCADE/RESTRICT в seats, schedule
+    // Важно: Проверьте правила ON DELETE для таблиц seats и schedule,
+    // которые ссылаются на halls. Если там RESTRICT, удаление не пройдет,
+    // пока есть связанные места или сеансы. CASCADE удалит и их.
     const { rowCount } = await db.query('DELETE FROM halls WHERE id = $1', [id]);
     if (rowCount === 0) {
       return res.status(404).json({ error: 'Зал не найден для удаления' });
@@ -83,8 +87,8 @@ router.delete('/:id', async (req, res) => {
     res.status(204).send(); // No Content
   } catch (err) {
     console.error(`Ошибка при удалении зала ${id}:`, err);
-     if (err.code === '23503') {
-        return res.status(409).json({ error: 'Невозможно удалить зал, так как он используется в местах или расписании.' });
+     if (err.code === '23503') { // Foreign key violation
+        return res.status(409).json({ error: 'Невозможно удалить зал, так как он используется в местах или расписании. Сначала удалите связанные сущности.' });
     }
     res.status(500).json({ error: 'Внутренняя ошибка сервера' });
   }
