@@ -47,19 +47,21 @@ async function checkSeatsAvailability(scheduleId, seatIds, client) { // Треб
     // Ищем существующие бронирования ИЛИ ручные блокировки для этих мест на этот сеанс
     // Добавляем FOR UPDATE, чтобы заблокировать строки на время транзакции, предотвращая гонку запросов
     const query = `
+    SELECT seat_id
+    FROM (
         SELECT DISTINCT t.seat_id
         FROM tickets t
         JOIN bookings b ON b.ticket_id = t.id
         WHERE b.schedule_id = $1 AND t.seat_id = ANY($2::int[])
-        FOR UPDATE -- Блокируем найденные строки билетов/броней
 
-        UNION
+        UNION -- <--- Оператор UNION
 
         SELECT DISTINCT sr.seat_id
         FROM seat_reservations sr
         WHERE sr.schedule_id = $1 AND sr.seat_id = ANY($2::int[])
-        FOR UPDATE -- Блокируем найденные строки резерваций
-    `;
+    ) AS unavailable_seats -- <--- Оборачиваем в подзапрос и даем ему имя
+    FOR UPDATE; -- <--- Применяем FOR UPDATE ко всему результату
+`;
     const { rows } = await client.query(query, [scheduleId, seatIds]);
     const unavailableSeats = rows.map(row => row.seat_id);
     // Находим пересечение запрошенных и недоступных мест
