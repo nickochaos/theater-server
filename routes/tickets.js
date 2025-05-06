@@ -1,7 +1,3 @@
-// routes/tickets.js
-const express = require('express');
-const router = express.Router();
-const db = require('../db');
 
 // routes/tickets.js
 const express = require('express');
