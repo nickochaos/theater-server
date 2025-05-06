@@ -11,7 +11,8 @@ router.get('/', async (req, res) => {
   let sql = `
     SELECT sch.id, sch.start_date, sch.start_time, sch.end_time,
            p.title as performance_title, h.hall_name,
-           p.duration_minutes, p.age_restriction
+           p.duration_minutes, p.age_restriction,
+           sch.hall_id  -- <<< ДОБАВЛЕНО: Теперь hall_id включается в SELECT
     FROM schedule sch
     LEFT JOIN performances p ON sch.performance_id = p.id
     LEFT JOIN halls h ON sch.hall_id = h.id
