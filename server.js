@@ -7,6 +7,7 @@ const { Server } = require("socket.io");
 const db = require('./db'); // Наш модуль для работы с БД (инициализирует пул)
 const cors = require('cors');
 
+
 // --- Импорт роутеров ---
 const authRoutes = require('./routes/auth'); // Для /register и /login
 const userRoutes = require('./routes/users'); // Для управления пользователями (защищенные)
@@ -58,6 +59,7 @@ app.use((req, res, next) => {
   next(); // Передаем управление дальше
 });
 
+app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api/fake-payment', fakePaymentRoutes); // <-- Подключаем роутер фейковой оплаты
 
 // --- Основные API Маршруты ---
