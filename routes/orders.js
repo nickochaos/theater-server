@@ -47,20 +47,25 @@ async function checkSeatsAvailability(scheduleId, seatIds, client) { // Треб
     // Ищем существующие бронирования ИЛИ ручные блокировки для этих мест на этот сеанс
     // Добавляем FOR UPDATE, чтобы заблокировать строки на время транзакции, предотвращая гонку запросов
     const query = `
-    SELECT seat_id
-    FROM (
-        SELECT DISTINCT t.seat_id
-        FROM tickets t
-        JOIN bookings b ON b.ticket_id = t.id
-        WHERE b.schedule_id = $1 AND t.seat_id = ANY($2::int[])
-
-        UNION -- <--- Оператор UNION
-
-        SELECT DISTINCT sr.seat_id
-        FROM seat_reservations sr
-        WHERE sr.schedule_id = $1 AND sr.seat_id = ANY($2::int[])
-    ) AS unavailable_seats -- <--- Оборачиваем в подзапрос и даем ему имя
-    FOR UPDATE; -- <--- Применяем FOR UPDATE ко всему результату
+    SELECT s.id AS seat_id -- Выбираем ID места
+    FROM seats s -- Из таблицы мест
+    JOIN schedule sch ON s.hall_id = sch.hall_id -- Объединяем с расписанием, чтобы связать места с залом сеанса
+    WHERE sch.id = $1 -- Фильтруем по ID сеанса
+      AND s.id = ANY($2::int[]) -- Фильтруем только по ID мест, переданным в запросе
+      AND ( -- Проверяем условие: место занято (есть бронь) ИЛИ место заблокировано (есть резервация) для ЭТОГО сеанса
+        EXISTS ( -- Проверяем наличие бронирования для этого места на этот сеанс
+          SELECT 1
+          FROM tickets t
+          JOIN bookings b ON b.ticket_id = t.id
+          WHERE b.schedule_id = $1 AND t.seat_id = s.id -- Связываем с текущим сеансом и текущим местом s.id
+        )
+        OR EXISTS ( -- Проверяем наличие ручной блокировки для этого места на этот сеанс
+          SELECT 1
+          FROM seat_reservations sr
+          WHERE sr.schedule_id = $1 AND sr.seat_id = s.id -- Связываем с текущим сеансом и текущим местом s.id
+        )
+      )
+    FOR UPDATE; -- <--- Применяем FOR UPDATE к результату этого запроса (строкам из seats)
 `;
     const { rows } = await client.query(query, [scheduleId, seatIds]);
     const unavailableSeats = rows.map(row => row.seat_id);
