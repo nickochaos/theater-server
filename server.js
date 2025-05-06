@@ -29,6 +29,7 @@ const reservationRoutes = require('./routes/reservations'); // Импорт но
 const newsRoutes = require('./routes/news'); // <-- Новый роутер новостей
 const chatRoutes = require('./routes/chat');   // <-- Новый роутер для REST части чата
 const paymentWebhookRoutes = require('./routes/payment_webhooks'); // <-- Новый роутер для вебхуков оплаты
+const fakePaymentRoutes = require('./routes/fake_payment');
 
 
 const app = express();
@@ -57,6 +58,7 @@ app.use((req, res, next) => {
   next(); // Передаем управление дальше
 });
 
+app.use('/api/fake-payment', fakePaymentRoutes); // <-- Подключаем роутер фейковой оплаты
 
 // --- Основные API Маршруты ---
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
