@@ -2,6 +2,8 @@
 require('dotenv').config(); // Загружаем переменные окружения из .env
 const path = require('path');
 const express = require('express');
+const http = require('http');
+const { Server } = require("socket.io");
 const db = require('./db'); // Наш модуль для работы с БД (инициализирует пул)
 const cors = require('cors');
 
@@ -24,9 +26,19 @@ const ticketRoutes = require('./routes/tickets');
 const bookingRoutes = require('./routes/bookings');
 const saleRoutes = require('./routes/sales');
 const reservationRoutes = require('./routes/reservations'); // Импорт нового роутера
+const newsRoutes = require('./routes/news'); // <-- Новый роутер новостей
+const chatRoutes = require('./routes/chat');   // <-- Новый роутер для REST части чата
+const paymentWebhookRoutes = require('./routes/payment_webhooks'); // <-- Новый роутер для вебхуков оплаты
 
 
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server, { // Инициализируем Socket.IO сервер
+    cors: {
+        origin: "*", // Настройте CORS для вашего фронтенда в продакшене!
+        methods: ["GET", "POST"]
+    }
+});
 const port = process.env.PORT || 3000; // Используем порт из .env или 3000
 
 // --- Middleware ---
@@ -37,6 +49,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 // Самый простой вариант, разрешает все источники:
 app.use(cors());
+app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
 // Простое логирование каждого запроса
 app.use((req, res, next) => {
@@ -75,7 +88,14 @@ app.use('/api/tickets', ticketRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/sales', saleRoutes);
 app.use('/api/reservations', reservationRoutes);
+app.use('/api/reservations', reservationRoutes);
+app.use('/api/news', newsRoutes);
+app.use('/api/chat', chatRoutes); // REST для чата
+app.use('/api/payment/webhook', paymentWebhookRoutes); // Вебхуки оплаты
 
+// --- Настройка Socket.IO для чата ---
+const chatHandler = require('./websockets/chatHandler'); // Логика чата вынесена
+chatHandler(io); // Передаем io в обработчик
 
 // --- Обработчики ошибок (должны идти после всех маршрутов) ---
 
@@ -98,8 +118,8 @@ app.use((err, req, res, next) => {
 
 
 // --- Запуск сервера ---
-app.listen(port, () => {
-  console.log(`Сервер успешно запущен на порту ${port}`);
+server.listen(port, () => {
+  console.log(`Сервер (HTTP + WebSocket) успешно запущен на порту ${port}`);
 
   // Простой тест соединения с БД при старте
   db.query('SELECT NOW()', (err, result) => {
