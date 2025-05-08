@@ -54,6 +54,7 @@ module.exports = (io) => {
             const sender = socket.user;
 
             if (!text || text.trim() === '') {
+                console.log('Получено пустое сообщение.');
                 return; // Не отправлять пустые сообщения
             }
 
@@ -64,10 +65,12 @@ module.exports = (io) => {
             if (sender.role === 'customer') {
                 targetRoom = 'admins'; // Сообщение от клиента идет всем админам
                 saveReceiverId = null; // Сообщение для "поддержки" в целом
+                console.log(`Сообщение от клиента "${sender.username}" для комнаты админов.`);
             } else if (sender.role === 'admin' && recipientId) {
                 targetRoom = `user_${recipientId}`; // Админ отвечает конкретному юзеру
                 receiverId = recipientId;
                 saveReceiverId = recipientId; // Сохраняем, кому адресовано
+                console.log(`Сообщение от админа "${sender.username}" для пользователя ID ${recipientId}.`);
             } else {
                 console.warn(`Invalid sendMessage attempt by ${sender.username} (Role: ${sender.role}) without recipientId.`);
                 return; // Невалидное сообщение (админ без получателя)
@@ -75,10 +78,12 @@ module.exports = (io) => {
 
             try {
                 // 1. Сохранить сообщение в БД
+                console.log(`Попытка сохранить сообщение в БД: senderId=${sender.id}, receiverId=${saveReceiverId}, text=${text.trim()}, senderRole=${sender.role}`);
                 const insertQuery = `
                     INSERT INTO chat_messages (sender_id, receiver_id, message_text, sender_role)
                     VALUES ($1, $2, $3, $4) RETURNING id, sent_at`;
                 const result = await db.query(insertQuery, [sender.id, saveReceiverId, text.trim(), sender.role]);
+                console.log('Сообщение успешно сохранено в БД с ID:', result.rows[0].id);
                 const newMessage = {
                     id: result.rows[0].id,
                     text: text.trim(),
@@ -90,13 +95,14 @@ module.exports = (io) => {
                 };
 
                 // 2. Отправить сообщение получателю(ям) через WebSocket
-                console.log(`Emitting 'newMessage' to room ${targetRoom || socket.id}:`, newMessage);
+                console.log(`Попытка отправить 'newMessage' в комнату ${targetRoom} и сокет отправителя ${socket.id}:`, newMessage);
                 if (targetRoom) {
                     io.to(targetRoom).emit('newMessage', newMessage);
+                    console.log(`Событие newMessage успешно отправлено в комнату ${targetRoom}.`);
+                }  else {
+                    console.warn('Target room не определена для отправки newMessage.'); // <--- Лог
                 }
-                // Можно также отправить подтверждение обратно отправителю
-                // socket.emit('messageSentConfirmation', { tempId: data.tempId, message: newMessage });
-
+                socket.emit('newMessage', newMessage);
             } catch (error) {
                 console.error(`Error saving/sending chat message from ${sender.username}:`, error);
                 // Отправить ошибку обратно отправителю?
