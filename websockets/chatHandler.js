@@ -49,6 +49,7 @@ module.exports = (io) => {
 
         // --- Обработка отправки сообщения ---
         socket.on('sendMessage', async (data) => {
+            console.log(`Сервер получил событие sendMessage от ${socket.user.username}:`, data);
             const { text, recipientId } = data; // recipientId нужен, когда админ отвечает конкретному пользователю
             const sender = socket.user;
 
