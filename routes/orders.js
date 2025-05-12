@@ -176,7 +176,7 @@ router.post('/initiate', protect, async (req, res) => {
             tickets: createdTicketsInfo,
             paymentInfo: paymentInfo // Теперь здесь URL фейковой оплаты
         });
-    --------------------------------------------------------
+    // --------------------------------------------------------
 
         res.status(201).json({
             message: 'Заказ успешно создан, ожидается оплата.',
