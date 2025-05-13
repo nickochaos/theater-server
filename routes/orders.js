@@ -84,6 +84,8 @@ async function checkSeatsAvailability(scheduleId, seatIds, client) { // Треб
 router.post('/initiate', protect, async (req, res) => {
     const userId = req.user.id;
     const { schedule_id, seats } = req.body; // seats - массив ID мест [1, 2, 3]
+    console.log("POST /api/orders/initiate: Получен scheduleId =", scheduleId, "Тип:", typeof scheduleId);
+    console.log("POST /api/orders/initiate: Получены seatIds =", seatIds);
 
     // Валидация входных данных
     if (!schedule_id || !/^\d+$/.test(String(schedule_id))) {
