@@ -84,11 +84,11 @@ async function checkSeatsAvailability(scheduleId, seatIds, client) { // Треб
 router.post('/initiate', protect, async (req, res) => {
     const userId = req.user.id;
     const { schedule_id, seats } = req.body; // seats - массив ID мест [1, 2, 3]
-    console.log("POST /api/orders/initiate: Получен scheduleId =", scheduleId, "Тип:", typeof scheduleId);
-    console.log("POST /api/orders/initiate: Получены seatIds =", seatIds);
+    console.log("POST /api/orders/initiate: Получен schedule_id =", schedule_id, "Тип:", typeof schedule_id); // <-- Использовали schedule_id
+    console.log("POST /api/orders/initiate: Получены seats =", seats); // <-- Использовали seats
 
     // Валидация входных данных
-    if (!schedule_id || !/^\d+$/.test(String(schedule_id))) {
+    if (typeof schedule_id !== 'number' || !Number.isInteger(schedule_id) || schedule_id <= 0) {
          return res.status(400).json({ error: 'Требуется корректный числовой schedule_id' });
     }
     if (!Array.isArray(seats) || seats.length === 0) {
