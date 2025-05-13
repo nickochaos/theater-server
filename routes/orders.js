@@ -382,8 +382,8 @@ router.get('/schedules/:scheduleId/seats/availability', protect, async (req, res
                     ELSE 'available' -- В противном случае место доступно
                 END as status
             FROM seats s
-            JOIN schedule sch ON s.hall_id = sch.hall_id -- Связываем места с залом сеанса
-            WHERE sch.id = $1 -- Фильтруем по нужному сеансу
+            -- Сначала находим hall_id для данного сеанса в подзапросе, затем присоединяем места из этого зала
+            JOIN (SELECT hall_id FROM schedule WHERE id = $1) AS sch_info ON s.hall_id = sch_info.hall_id
             LEFT JOIN (
                 -- Подзапрос для получения ID мест, которые забронированы (есть билет в составе бронирования)
                 SELECT t.seat_id
@@ -397,7 +397,7 @@ router.get('/schedules/:scheduleId/seats/availability', protect, async (req, res
                 FROM seat_reservations sr
                 WHERE sr.schedule_id = $1 -- Для данного сеанса
             ) AS admin_blocked_seats ON s.id = admin_blocked_seats.seat_id
-            ORDER BY s.y_coord, s.x_coord; -- Упорядочиваем места по координатам (для удобства отрисовки/обработки на фронтенде)
+            ORDER BY s.y_coord, s.x_coord; -- Упорядочиваем места по координатам
         `;
         // ============================================================================
 
