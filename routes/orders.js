@@ -357,6 +357,61 @@ router.get('/:id/status', protect, async (req, res) => {
      }
 });
 
+// GET /api/schedules/:scheduleId/seats/availability - Получить статус доступности мест для сеанса
+// Защищен, чтобы получать актуальный статус в процессе бронирования
+router.get('/schedules/:scheduleId/seats/availability', protect, async (req, res) => {
+    const scheduleId = parseInt(req.params.scheduleId, 10); // Получаем ID сеанса из параметров URL
+
+    if (isNaN(scheduleId)) {
+        return res.status(400).json({ error: 'Неверный ID сеанса' });
+    }
+
+    try {
+        // === SQL-запрос для получения статуса всех мест в зале для данного сеанса ===
+        // 1. Получаем все места в зале, где проходит этот сеанс.
+        // 2. Левым JOINом присоединяем информацию о забронированных местах (из tickets+bookings).
+        // 3. Левым JOINом присоединяем информацию о местах, заблокированных админом (из seat_reservations).
+        // 4. Используем CASE для определения статуса каждого места.
+        const sql = `
+            SELECT
+                s.id as "seatId",
+                CASE
+                    WHEN booked_seats.seat_id IS NOT NULL THEN 'booked' -- Место занято (куплен билет)
+                    WHEN admin_blocked_seats.seat_id IS NOT NULL THEN 'blocked_by_admin' -- Место заблокировано админом
+                    -- TODO: Добавить проверку на временные блокировки пользователей, если они будут реализованы
+                    ELSE 'available' -- В противном случае место доступно
+                END as status
+            FROM seats s
+            JOIN schedule sch ON s.hall_id = sch.hall_id -- Связываем места с залом сеанса
+            WHERE sch.id = $1 -- Фильтруем по нужному сеансу
+            LEFT JOIN (
+                -- Подзапрос для получения ID мест, которые забронированы (есть билет в составе бронирования)
+                SELECT t.seat_id
+                FROM tickets t
+                JOIN bookings b ON t.id = b.ticket_id
+                WHERE b.schedule_id = $1 -- Для данного сеанса
+            ) AS booked_seats ON s.id = booked_seats.seat_id
+            LEFT JOIN (
+                -- Подзапрос для получения ID мест, которые заблокированы админом
+                SELECT sr.seat_id
+                FROM seat_reservations sr
+                WHERE sr.schedule_id = $1 -- Для данного сеанса
+            ) AS admin_blocked_seats ON s.id = admin_blocked_seats.seat_id
+            ORDER BY s.y_coord, s.x_coord; -- Упорядочиваем места по координатам (для удобства отрисовки/обработки на фронтенде)
+        `;
+        // ============================================================================
+
+        const { rows } = await db.query(sql, [scheduleId]); // Выполняем запрос, передавая scheduleId
+
+        // Возвращаем массив объектов { seatId, status }
+        res.json(rows);
+
+    } catch (err) {
+        console.error(`Ошибка при получении доступности мест для сеанса ${scheduleId}:`, err);
+        res.status(500).json({ error: 'Внутренняя ошибка сервера при получении доступности мест.' });
+    }
+});
+
 
 // PUT /api/orders/:id - Обновить статус заказа (Только Админ)
 router.put('/:id', protect, isAdmin, async (req, res) => {
