@@ -9,7 +9,7 @@ const { protect, isAdmin } = require('../middleware/authMiddleware');
 router.get('/', async (req, res) => {
   const { hall_id, zone_id, row_id } = req.query; // Получаем параметры фильтрации
   let sql = `
-    SELECT s.id, s.seat_number, s.base_price,
+    SELECT s.id, s.seat_number, s.base_price, s.x_coord, s.y_coord,
            s.hall_id, h.hall_name,
            s.zone_id, z.zone_name,
            s.row_id, r.row_name
