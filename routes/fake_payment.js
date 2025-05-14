@@ -57,6 +57,13 @@ router.post('/process', async (req, res) => {
 
     const paymentSuccessful = simulate_failure !== 'true'; // Успех, если не симулируем ошибку
 
+    const frontendUrl = process.env.FRONTEND_URL;
+    if (!frontendUrl) {
+        console.error("FRONTEND_URL не установлен в переменных окружения!");
+        // Fallback или ошибка, если URL фронтенда не настроен
+        return res.status(500).send("Ошибка конфигурации сервера: Не указан URL фронтенда для редиректа.");
+    }
+
     // --- Имитация вызова Webhook-а ---
     // В реальном приложении этот вызов делает сама платежная система на ваш /api/payment/webhook/...
     // Здесь мы его имитируем для обновления статуса заказа и создания записей в sales.
@@ -102,7 +109,7 @@ router.post('/process', async (req, res) => {
             await client.query('COMMIT');
             console.log(`Заказ ${orderId} помечен как оплаченный (фейк).`);
             // Перенаправляем пользователя на страницу успеха
-            res.redirect(`/payment-result.html?status=success&orderId=${orderId}`);
+            res.redirect(`${frontendUrl}/payment/result?status=success&orderId=${orderId}`);
         } else {
             console.log(`Webhook (Фейк): Ошибка оплаты для заказа ${orderId}`);
             await client.query("UPDATE orders SET status = 'payment_failed' WHERE id = $1", [orderId]);
@@ -116,12 +123,12 @@ router.post('/process', async (req, res) => {
             await client.query('COMMIT');
             console.log(`Заказ ${orderId} помечен как 'ошибка оплаты' (фейк).`);
             // Перенаправляем пользователя на страницу ошибки
-            res.redirect(`/payment-result.html?status=failed&orderId=${orderId}`);
+            res.redirect(`${frontendUrl}/payment/result?status=failed&orderId=${orderId}`);
         }
     } catch (error) {
         await client.query('ROLLBACK');
         console.error(`Webhook (Фейк) Error: Ошибка обработки уведомления для заказа ${orderId}:`, error);
-        res.redirect(`/payment-result.html?status=error&message=ServerError&orderId=${orderId}`);
+        res.redirect(`${frontendUrl}/payment/result?status=error&message=ServerError&orderId=${orderId}`);
     } finally {
         client.release();
     }
