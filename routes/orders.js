@@ -84,36 +84,38 @@ async function checkSeatsAvailability(scheduleId, seatIds, client) { // Треб
 router.post('/initiate', protect, async (req, res) => {
     const userId = req.user.id;
     const { schedule_id, seats } = req.body; // seats - массив ID мест [1, 2, 3]
-    console.log("POST /api/orders/initiate: Получен schedule_id =", schedule_id, "Тип:", typeof schedule_id); // <-- Использовали schedule_id
-    console.log("POST /api/orders/initiate: Получены seats =", seats); // <-- Использовали seats
+    // Логирование (оставляем для отладки, но исправьте имена переменных!)
+    // console.log("POST /api/orders/initiate: Получен schedule_id =", schedule_id, "Тип:", typeof schedule_id);
+    // console.log("POST /api/orders/initiate: Получены seats =", seats);
 
-    // Валидация входных данных
+
+    // Валидация входных данных (оставляем как есть)
     if (typeof schedule_id !== 'number' || !Number.isInteger(schedule_id) || schedule_id <= 0) {
-         return res.status(400).json({ error: 'Требуется корректный числовой schedule_id' });
+        return res.status(400).json({ error: 'Требуется корректный числовой schedule_id' });
     }
     if (!Array.isArray(seats) || seats.length === 0) {
         return res.status(400).json({ error: 'Требуется непустой массив ID мест (seats)' });
     }
 
-    const seatIds = seats.map(id => parseInt(id, 10));
-    if (seatIds.some(isNaN)) { // Проверяем, что все элементы стали числами
+    const seatIds = seats.map(id => parseInt(id, 10)); // Преобразуем элементы в числа
+    if (seatIds.some(isNaN)) {
          return res.status(400).json({ error: 'Массив seats содержит нечисловые ID' });
     }
 
+
     // Получаем клиента из пула для выполнения всей операции в транзакции
     const client = await db.getClient();
-
     try {
         await client.query('BEGIN'); // Начинаем транзакцию
 
-        // 1. Проверить существование сеанса и получить hall_id
+
+        // 1. Проверить существование сеанса и получить hall_id (оставляем как есть)
         const scheduleCheck = await client.query('SELECT hall_id FROM schedule WHERE id = $1', [schedule_id]);
         if (scheduleCheck.rows.length === 0) {
             throw new Error(`Сеанс с ID ${schedule_id} не найден.`);
         }
-        // const hallId = scheduleCheck.rows[0].hall_id; // Может понадобиться для доп. проверок
 
-        // 2. Проверить, что все запрошенные места принадлежат залу этого сеанса (доп. проверка)
+        // 2. Проверить, что все запрошенные места принадлежат залу этого сеанса (доп. проверка) (оставляем как есть)
         const seatsHallCheck = await client.query(
             'SELECT id FROM seats WHERE id = ANY($1::int[]) AND hall_id = $2',
             [seatIds, scheduleCheck.rows[0].hall_id]
@@ -122,36 +124,46 @@ router.post('/initiate', protect, async (req, res) => {
             throw new Error('Одно или несколько выбранных мест не принадлежат залу данного сеанса.');
         }
 
-        // 3. Проверить доступность мест (критически важно, используем FOR UPDATE)
+        // 3. Проверить доступность мест (критически важно, используем FOR UPDATE) (оставляем как есть)
         const availability = await checkSeatsAvailability(schedule_id, seatIds, client);
         if (!availability.available) {
             throw new Error(`Места с ID: ${availability.unavailableSeats.join(', ')} уже заняты или заблокированы.`);
         }
 
-        // 4. Создать заказ
+        // === НОВЫЙ ПОРЯДОК: СНАЧАЛА РАСЧЕТ totalAmount И ЦЕН БИЛЕТОВ ===
+        let totalAmount = 0; // Объявляем переменную totalAmount здесь!
+        const calculatedPrices = []; // Будем хранить ID места и рассчитанную цену
+
+        for (const seatId of seatIds) {
+            // Рассчитать цену для каждого места
+            const price = await calculateTicketPrice(seatId, client);
+            totalAmount += price; // Накапливаем общую сумму
+            calculatedPrices.push({ seatId, price }); // Сохраняем цену для использования при создании билета
+        }
+        // ===============================================================
+
+
+        // === НОВЫЙ ПОРЯДОК: ЗАТЕМ СОЗДАНИЕ ЗАКАЗА (С total_amount) ===
         const orderResult = await client.query(
+            // ИСПРАВЛЕННЫЙ INSERT: Добавляем столбец total_amount
             "INSERT INTO orders (user_id, status, total_amount) VALUES ($1, $2, $3) RETURNING id, status, order_date",
-        [userId, 'awaiting_payment', totalAmount]
+            [userId, 'awaiting_payment', totalAmount] // Используем рассчитанный totalAmount
         );
         const newOrder = orderResult.rows[0];
         const orderId = newOrder.id;
+        // ===========================================================
 
-        // 5. Создать билеты и бронирования для каждого места
-        let totalAmount = 0;
-        const createdTicketsInfo = []; // Будем хранить ID и цену
 
-        for (const seatId of seatIds) {
-            // Рассчитать цену
-            const finalPrice = await calculateTicketPrice(seatId, client);
-            totalAmount += finalPrice;
-
+        // === НОВЫЙ ПОРЯДОК: ПОСЛЕ СОЗДАНИЯ ЗАКАЗА - СОЗДАНИЕ БИЛЕТОВ И БРОНИРОВАНИЙ ===
+        const createdTicketsInfo = []; // Будем хранить ID и цену билетов для ответа
+        for (const { seatId, price } of calculatedPrices) { // Используем рассчитанные цены
             // Создать билет
             const ticketResult = await client.query(
                 "INSERT INTO tickets (seat_id, final_price) VALUES ($1, $2) RETURNING id",
-                [seatId, finalPrice]
+                [seatId, price] // Используем уже рассчитанную цену
             );
             const ticketId = ticketResult.rows[0].id;
-            createdTicketsInfo.push({ ticketId: ticketId, price: finalPrice, seatId: seatId });
+            createdTicketsInfo.push({ ticketId: ticketId, price: price, seatId: seatId }); // Сохраняем инфо для ответа
 
             // Создать бронирование
             await client.query(
@@ -159,40 +171,48 @@ router.post('/initiate', protect, async (req, res) => {
                 [schedule_id, orderId, ticketId]
             );
         }
+        // ===========================================================================
 
-        // 6. (Опционально) Можно создать временные блокировки в seat_reservations,
-        // но блокировка строк через FOR UPDATE в checkSeatsAvailability уже частично решает проблему гонки.
-        // Если процесс оплаты может быть долгим, временные блокировки с таймером могут быть полезны.
+
+        // 6. (Опционально) Временные блокировки - если нужны (оставляем комментарий)
+        // ...
 
         await client.query('COMMIT'); // Фиксируем транзакцию
 
+
+        // === ПОДГОТОВКА paymentInfo И ФИНАЛЬНЫЙ res.json (оставляем как есть) ===
+         // paymentInfo использует рассчитанный totalAmount
           const paymentInfo = {
             paymentUrl: `${req.protocol}://${req.get('host')}/api/fake-payment/pay?orderId=${orderId}&amount=${totalAmount}`,
             paymentGatewayId: `fake_id_${orderId}_${Date.now()}` // Фейковый ID
         };
-        
+
+        // Удаляем ЛИШНИЙ первый блок res.json, если он у вас еще есть!
+        // Должен остаться только ОДИН res.json в конце блока try:
         res.status(201).json({
             message: 'Заказ успешно создан, ожидается оплата.',
             order: {
                 id: orderId,
                 status: newOrder.status,
                 orderDate: newOrder.order_date,
-                totalAmount: totalAmount,
+                totalAmount: totalAmount, // Используем рассчитанный totalAmount
                 userId: userId,
             },
             tickets: createdTicketsInfo, // Информация о созданных билетах
             paymentInfo: paymentInfo // Информация для редиректа на оплату
         });
+        // ======================================================================
+
 
     } catch (err) {
         // Обязательно откатываем транзакцию при любой ошибке
         await client.query('ROLLBACK');
         console.error('Ошибка при инициации заказа:', err);
-        // Возвращаем 400 или 409 для ожидаемых ошибок (места заняты), 500 для остальных
+        // Обработка ошибок (оставляем как есть)
         if (err.message.includes('уже заняты или заблокированы')) {
-             res.status(409).json({ error: `Не удалось создать заказ: ${err.message}` }); // 409 Conflict
+             res.status(409).json({ error: `Не удалось создать заказ: ${err.message}` });
         } else if (err.message.includes('не найден') || err.message.includes('не принадлежат залу')) {
-            res.status(404).json({ error: `Не удалось создать заказ: ${err.message}` }); // 404 Not Found (для сеанса/мест)
+            res.status(404).json({ error: `Не удалось создать заказ: ${err.message}` });
         }
         else {
             res.status(500).json({ error: 'Внутренняя ошибка сервера при создании заказа.' });
