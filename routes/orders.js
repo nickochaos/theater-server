@@ -130,8 +130,8 @@ router.post('/initiate', protect, async (req, res) => {
 
         // 4. Создать заказ
         const orderResult = await client.query(
-            "INSERT INTO orders (user_id, status) VALUES ($1, 'awaiting_payment') RETURNING id, status, order_date",
-            [userId]
+            "INSERT INTO orders (user_id, status, total_amount) VALUES ($1, $2, $3) RETURNING id, status, order_date",
+        [userId, 'awaiting_payment', totalAmount]
         );
         const newOrder = orderResult.rows[0];
         const orderId = newOrder.id;
