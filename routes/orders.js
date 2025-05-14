@@ -270,21 +270,37 @@ router.get('/', protect, async (req, res) => {
 // GET /api/orders/:id - Получить заказ по ID (защищено, + проверка владения)
 router.get('/:id', protect, async (req, res) => {
      const orderId = parseInt(req.params.id, 10);
-     const userId = req.user.id;
-     const userRole = req.user.role;
+     const userId = req.user.id; // ID пользователя из токена
+     const userRole = req.user.role; // Роль пользователя из токена
 
      if (isNaN(orderId)) {
           return res.status(400).json({ error: 'Неверный ID заказа' });
      }
 
      try {
-        // Получаем сам заказ
-        const orderRes = await db.query(`
-            SELECT o.id, o.order_date as "orderDate", o.status, o.user_id as "userId", u.username, o.total_amount as "totalAmount"
+        // === SQL для получения самого заказа ===
+        const orderSql = `
+            SELECT
+                o.id,
+                o.order_date as "orderDate",
+                o.status,
+                o.user_id as "userId",
+                u.username,
+                o.total_amount as "totalAmount" -- <-- ДОБАВЛЕНО ЭТО ПОЛЕ
             FROM orders o
             LEFT JOIN users u ON o.user_id = u.id
             WHERE o.id = $1
-        `, [orderId]);
+        `;
+        // ====================================
+
+        // === ДОБАВЬТЕ ЛОГИРОВАНИЕ ПЕРЕД ПЕРВЫМ ЗАПРОСОМ ===
+        console.log("GET /api/orders/:id - Order SQL Query:", orderSql);
+        console.log("GET /api/orders/:id - Order SQL Params:", [orderId]);
+        // ================================================
+
+        // Выполняем запрос для получения самого заказа
+        const orderRes = await db.query(orderSql, [orderId]);
+
 
         if (orderRes.rows.length === 0) {
           return res.status(404).json({ error: 'Заказ не найден' });
@@ -292,16 +308,20 @@ router.get('/:id', protect, async (req, res) => {
         const orderData = orderRes.rows[0];
 
         // Проверка прав: админ или владелец заказа
+        // Админ может видеть любой заказ, обычный пользователь - только свой
         if (userRole !== 'admin' && orderData.userId !== userId) {
+             // Log попытку доступа
+             console.warn(`Пользователь ${userId} (роль: ${userRole}) пытался получить доступ к заказу ${orderId}, владельцем которого является ${orderData.userId}`);
              return res.status(403).json({ error: 'Доступ запрещен к этому заказу' });
         }
 
-        // Получаем связанные бронирования/билеты
-        const bookingsRes = await db.query(`
+        // === SQL для получения связанных бронирований/билетов ===
+        const bookingsSql = `
             SELECT
                 b.id as booking_id, b.ticket_id, t.final_price,
                 s.seat_number, r.row_name, z.zone_name, h.hall_name,
-                sch.start_date, sch.start_time, p.title as performance_title
+                sch.start_date, sch.start_time, p.title as performance_title,
+                s.id as seat_id, r.id as row_id, z.id as zone_id, h.id as hall_id, sch.id as schedule_id -- Добавляем ID для удобства
             FROM bookings b
             JOIN tickets t ON b.ticket_id = t.id
             JOIN seats s ON t.seat_id = s.id
@@ -311,16 +331,52 @@ router.get('/:id', protect, async (req, res) => {
             JOIN schedule sch ON b.schedule_id = sch.id
             JOIN performances p ON sch.performance_id = p.id
             WHERE b.order_id = $1
-            ORDER BY t.id -- Или другая осмысленная сортировка
-        `, [orderId]);
+            ORDER BY r.id, s.seat_number::int; -- Сортируем по ряду и номеру места
+        `;
+        // =======================================================
 
-        orderData.bookings = bookingsRes.rows; // Добавляем детали бронирования
+        // === ДОБАВЬТЕ ЛОГИРОВАНИЕ ПЕРЕД ВТОРЫМ ЗАПРОСОМ ===
+         console.log("GET /api/orders/:id - Bookings SQL Query:", bookingsSql);
+         console.log("GET /api/orders/:id - Bookings SQL Params:", [orderId]);
+        // ================================================
 
-        res.json(orderData);
+        // Получаем связанные бронирования/билеты
+        const bookingsRes = await db.query(bookingsSql, [orderId]);
+        orderData.bookings = bookingsRes.rows; // Добавляем список бронирований к данным заказа
+
+        // === (Опционально) Добавьте paymentInfo для статуса awaiting_payment ===
+        // Это позволит фронтенду получить URL для оплаты, если заказ еще не оплачен.
+        // В реальном приложении paymentInfo может генерироваться шлюзом.
+        // Здесь мы просто добавляем его для фейковой оплаты.
+        if (orderData.status === 'awaiting_payment') {
+            // Помните, что totalAmount теперь приходит из БД
+             const totalAmount = orderData.totalAmount; // Берем из загруженных данных
+             const paymentInfo = {
+                 // TODO: Сгенерировать реальный URL оплаты для вашего шлюза
+                 paymentUrl: `${req.protocol}://${req.get('host')}/api/fake-payment/pay?orderId=${orderId}&amount=${totalAmount}`,
+                 paymentGatewayId: `fake_id_${orderId}_${Date.now()}` // Фейковый ID
+             };
+             orderData.paymentInfo = paymentInfo; // Добавляем paymentInfo к объекту заказа
+             console.log("Добавлено paymentInfo для заказа:", orderId);
+        }
+        // ====================================================================
+
+
+        res.json(orderData); // Возвращаем полные детали заказа
 
      } catch (err) {
          console.error(`Ошибка при получении заказа ${orderId}:`, err);
-         res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+         // Возвращаем 400 или 404/403 для ожидаемых ошибок, 500 для остальных
+         if (err.message.includes('Неверный ID заказа')) {
+              res.status(400).json({ error: err.message });
+         } else if (err.message.includes('Заказ не найден')) {
+             res.status(404).json({ error: err.message });
+         } else if (err.message.includes('Доступ запрещен')) {
+             res.status(403).json({ error: err.message });
+         }
+         else {
+             res.status(500).json({ error: 'Внутренняя ошибка сервера при получении заказа.' });
+         }
      }
 });
 
