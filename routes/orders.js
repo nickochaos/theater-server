@@ -170,16 +170,7 @@ router.post('/initiate', protect, async (req, res) => {
             paymentUrl: `${req.protocol}://${req.get('host')}/api/fake-payment/pay?orderId=${orderId}&amount=${totalAmount}`,
             paymentGatewayId: `fake_id_${orderId}_${Date.now()}` // Фейковый ID
         };
-        // ----------------------------------------------------------
-
-        res.status(201).json({
-            message: 'Заказ успешно создан, перенаправление на фейковую оплату...',
-            order: { /* ... данные заказа ... */ },
-            tickets: createdTicketsInfo,
-            paymentInfo: paymentInfo // Теперь здесь URL фейковой оплаты
-        });
-    // --------------------------------------------------------
-
+        
         res.status(201).json({
             message: 'Заказ успешно создан, ожидается оплата.',
             order: {
