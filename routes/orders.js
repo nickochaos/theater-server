@@ -280,7 +280,7 @@ router.get('/:id', protect, async (req, res) => {
      try {
         // Получаем сам заказ
         const orderRes = await db.query(`
-            SELECT o.id, o.order_date as "orderDate", o.status, o.user_id as "userId", u.username
+            SELECT o.id, o.order_date as "orderDate", o.status, o.user_id as "userId", u.username, o.total_amount as "totalAmount"
             FROM orders o
             LEFT JOIN users u ON o.user_id = u.id
             WHERE o.id = $1
