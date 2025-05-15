@@ -1,16 +1,16 @@
 // server.js
-require('dotenv').config(); // Загружаем переменные окружения из .env
+require('dotenv').config(); 
 const path = require('path');
 const express = require('express');
 const http = require('http');
 const { Server } = require("socket.io");
-const db = require('./db'); // Наш модуль для работы с БД (инициализирует пул)
+const db = require('./db'); 
 const cors = require('cors');
 
 
-// --- Импорт роутеров ---
-const authRoutes = require('./routes/auth'); // Для /register и /login
-const userRoutes = require('./routes/users'); // Для управления пользователями (защищенные)
+
+const authRoutes = require('./routes/auth'); 
+const userRoutes = require('./routes/users'); 
 const performanceRoutes = require('./routes/performances');
 const actorRoutes = require('./routes/actors');
 const producerRoutes = require('./routes/producers');
@@ -26,38 +26,37 @@ const orderRoutes = require('./routes/orders');
 const ticketRoutes = require('./routes/tickets');
 const bookingRoutes = require('./routes/bookings');
 const saleRoutes = require('./routes/sales');
-const reservationRoutes = require('./routes/reservations'); // Импорт нового роутера
-const newsRoutes = require('./routes/news'); // <-- Новый роутер новостей
-const chatRoutes = require('./routes/chat');   // <-- Новый роутер для REST части чата
-const paymentWebhookRoutes = require('./routes/payment_webhooks'); // <-- Новый роутер для вебхуков оплаты
+const reservationRoutes = require('./routes/reservations'); 
+const newsRoutes = require('./routes/news'); 
+const chatRoutes = require('./routes/chat');   
+const paymentWebhookRoutes = require('./routes/payment_webhooks'); 
 const fakePaymentRoutes = require('./routes/fake_payment');
 
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { // Инициализируем Socket.IO сервер
+const io = new Server(server, { 
     cors: {
-        origin: "*", // Настройте CORS для вашего фронтенда в продакшене!
+        origin: "*", 
         methods: ["GET", "POST"]
     }
 });
-const port = process.env.PORT || 3000; // Используем порт из .env или 3000
+const port = process.env.PORT || 3000; 
 
-// --- Middleware ---
 
-// Парсинг JSON тел запросов
+
+
 app.use(express.json());
-// Парсинг URL-encoded тел запросов (для обычных HTML форм)
+
 app.use(express.urlencoded({ extended: true }));
-// Самый простой вариант, разрешает все источники:
+
 app.use(cors());
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
 
-// Простое логирование каждого запроса
+
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl}`);
-  next(); // Передаем управление дальше
-});
+  next(); 
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api/fake-payment', fakePaymentRoutes); // <-- Подключаем роутер фейковой оплаты
@@ -73,9 +72,9 @@ app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl}`);
   next();
 });
-// --- Подключение роутеров для каждой сущности ---
-app.use('/api/auth', authRoutes); // Регистрация и вход (незащищенные)
-app.use('/api/users', userRoutes); // Управление пользователями (защищенные внутри роутера)
+
+app.use('/api/auth', authRoutes); 
+app.use('/api/users', userRoutes); 
 app.use('/api/performances', performanceRoutes);
 app.use('/api/actors', actorRoutes);
 app.use('/api/producers', producerRoutes);
@@ -94,38 +93,36 @@ app.use('/api/sales', saleRoutes);
 app.use('/api/reservations', reservationRoutes);
 app.use('/api/reservations', reservationRoutes);
 app.use('/api/news', newsRoutes);
-app.use('/api/chat', chatRoutes); // REST для чата
-app.use('/api/payment/webhook', paymentWebhookRoutes); // Вебхуки оплаты
+app.use('/api/chat', chatRoutes); 
+app.use('/api/payment/webhook', paymentWebhookRoutes); 
 
-// --- Настройка Socket.IO для чата ---
-const chatHandler = require('./websockets/chatHandler'); // Логика чата вынесена
-chatHandler(io); // Передаем io в обработчик
 
-// --- Обработчики ошибок (должны идти после всех маршрутов) ---
+const chatHandler = require('./websockets/chatHandler'); 
+chatHandler(io); 
 
-// Обработка несуществующих маршрутов (404)
+
+
+
 app.use((req, res, next) => {
   res.status(404).json({ error: "Маршрут не найден" });
 });
 
-// Глобальный обработчик ошибок сервера (500)
-// Express автоматически передает сюда ошибки, если вызвать next(err) в роутерах
-// Или если произошла синхронная ошибка в middleware/роутере
+
 app.use((err, req, res, next) => {
   console.error("Произошла необработанная ошибка:", err.stack || err.message || err);
-  // В продакшене можно не отправлять stack trace клиенту
+  
   res.status(err.status || 500).json({
       error: err.message || 'Внутренняя ошибка сервера'
-      // stack: process.env.NODE_ENV === 'development' ? err.stack : undefined // Показывать stack trace только в разработке
+      
   });
 });
 
 
-// --- Запуск сервера ---
+
 server.listen(port, () => {
   console.log(`Сервер (HTTP + WebSocket) успешно запущен на порту ${port}`);
 
-  // Простой тест соединения с БД при старте
+ 
   db.query('SELECT NOW()', (err, result) => {
     if (err) {
         console.error("!!! Ошибка подключения к базе данных при старте:", err.message);
@@ -138,20 +135,20 @@ server.listen(port, () => {
 });
 
 
-// --- Обработка корректного завершения работы ---
+
 const gracefulShutdown = async (signal) => {
   console.log(`\nПолучен сигнал ${signal}. Завершение работы...`);
   try {
-    // Здесь можно добавить закрытие других ресурсов, если они есть
-    await db.pool.end(); // Закрываем пул соединений PostgreSQL
+   
+    await db.pool.end(); 
     console.log('Пул соединений PostgreSQL успешно закрыт.');
-    process.exit(0); // Выходим с кодом успеха
+    process.exit(0); 
   } catch (err) {
     console.error('Ошибка при закрытии пула соединений:', err);
-    process.exit(1); // Выходим с кодом ошибки
+    process.exit(1); 
   }
 };
 
-// Слушаем сигналы завершения
-process.on('SIGINT', gracefulShutdown); // Ctrl+C
-process.on('SIGTERM', gracefulShutdown); // Сигнал от системы (например, от pm2 stop)
+
+process.on('SIGINT', gracefulShutdown); 
+process.on('SIGTERM', gracefulShutdown); 
