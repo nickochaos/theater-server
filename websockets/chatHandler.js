@@ -3,8 +3,8 @@ const db = require('../db');
 const jwt = require('jsonwebtoken');
 
 
-const onlineUsers = new Map(); // userId -> socketId
-const onlineAdmins = new Map(); // adminId -> socketId
+const onlineUsers = new Map(); 
+const onlineAdmins = new Map(); 
 
 module.exports = (io) => {
 
