@@ -7,7 +7,9 @@ const { Server } = require("socket.io");
 const db = require('./db'); 
 const cors = require('cors');
 
-
+const swaggerUi = require('swagger-ui-express');
+const YAML = require('yamljs'); 
+const swaggerDocument = YAML.load('./swagger.yaml'); 
 
 const authRoutes = require('./routes/auth'); 
 const userRoutes = require('./routes/users'); 
@@ -31,7 +33,7 @@ const newsRoutes = require('./routes/news');
 const chatRoutes = require('./routes/chat');   
 const paymentWebhookRoutes = require('./routes/payment_webhooks'); 
 const fakePaymentRoutes = require('./routes/fake_payment');
-
+const basicAuth = require('express-basic-auth');
 
 const app = express();
 const server = http.createServer(app);
@@ -52,12 +54,16 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use(cors());
 app.use('/uploads', express.static(path.join(__dirname, 'public/uploads')));
-
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.originalUrl}`);
   next(); 
-
+app.use('/api-docs', basicAuth({
+    users: { 'admin': '12345' }, 
+    challenge: true, 
+    realm: 'SwaggerAPIDocs',
+}), swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/api/fake-payment', fakePaymentRoutes); // <-- Подключаем роутер фейковой оплаты
 
